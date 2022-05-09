@@ -94,6 +94,9 @@ TZONE=${TZONE:-'Europe/London'}
 
 read -r -p "Email address for sysadmin (e.g. j.bloggs@example.com): " EMAILADDR
 
+read -r -p "Desired SSH log-in port (default: 22): " SSHPORT
+SSHPORT=${SSHPORT:-22}
+
 VPNIPPOOL="10.101.0.0/16"
 
 
@@ -141,6 +144,9 @@ iptables -A INPUT -m state --state INVALID -j DROP
 # rate-limit repeated new requests from same IP to any ports
 iptables -I INPUT -i "${ETH0ORSIMILAR}" -m state --state NEW -m recent --set
 iptables -I INPUT -i "${ETH0ORSIMILAR}" -m state --state NEW -m recent --update --seconds 300 --hitcount 60 -j DROP
+
+# accept (non-standard) SSH
+iptables -A INPUT -p tcp --dport "${SSHPORT}" -j ACCEPT
 
 # VPN
 
