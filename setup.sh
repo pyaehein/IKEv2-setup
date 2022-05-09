@@ -1,8 +1,8 @@
 #!/bin/bash -e
 
 # github.com/jawj/IKEv2-setup
-# Copyright (c) 2015 – 2021 George MacKerron
-# Released under the MIT licence: http://opensource.org/licenses/mit-license
+# Copyright (c) 2015 – 2021 George MacKerron
+# Released under the MIT licence: http://opensource.org/licenses/mit-license
 
 echo
 echo "=== https://github.com/jawj/IKEv2-setup ==="
@@ -68,7 +68,6 @@ done
 
 echo '
 Public DNS servers include:
-
 176.103.130.130,176.103.130.131  AdGuard               https://adguard.com/en/adguard-dns/overview.html
 176.103.130.132,176.103.130.134  AdGuard Family        https://adguard.com/en/adguard-dns/overview.html
 1.1.1.1,1.0.0.1                  Cloudflare/APNIC      https://1.1.1.1
@@ -82,8 +81,8 @@ Public DNS servers include:
 77.88.8.7,77.88.8.3              Yandex Family         https://dns.yandex.com
 '
 
-read -r -p "DNS servers for VPN users (default: 1.1.1.1,1.0.0.1): " VPNDNS
-VPNDNS=${VPNDNS:-'1.1.1.1,1.0.0.1'}
+read -r -p "DNS servers for VPN users (default: 8.8.8.8,8.8.4.4): " VPNDNS
+VPNDNS=${VPNDNS:-'8.8.8.8,8.8.4.4'}
 
 
 echo
@@ -94,31 +93,6 @@ read -r -p "Timezone (default: Europe/London): " TZONE
 TZONE=${TZONE:-'Europe/London'}
 
 read -r -p "Email address for sysadmin (e.g. j.bloggs@example.com): " EMAILADDR
-
-read -r -p "Desired SSH log-in port (default: 22): " SSHPORT
-SSHPORT=${SSHPORT:-22}
-
-read -r -p "New SSH log-in user name: " LOGINUSERNAME
-
-CERTLOGIN="n"
-if [[ -s /root/.ssh/authorized_keys ]]; then
-  while true; do
-    read -r -p "Copy /root/.ssh/authorized_keys to new user and disable SSH password log-in [Y/n]? " CERTLOGIN
-    [[ ${CERTLOGIN,,} =~ ^(y(es)?)?$ ]] && CERTLOGIN=y
-    [[ ${CERTLOGIN,,} =~ ^no?$ ]] && CERTLOGIN=n
-    [[ $CERTLOGIN =~ ^(y|n)$ ]] && break
-  done
-fi
-
-while true; do
-  [[ ${CERTLOGIN} = "y" ]] && read -r -s -p "New SSH user's password (e.g. for sudo): " LOGINPASSWORD
-  [[ ${CERTLOGIN} != "y" ]] && read -r -s -p "New SSH user's log-in password (must be REALLY STRONG): " LOGINPASSWORD
-  echo
-  read -r -s -p "Confirm new SSH user's password: " LOGINPASSWORD2
-  echo
-  [[ "${LOGINPASSWORD}" = "${LOGINPASSWORD2}" ]] && break
-  echo "Passwords didn't match -- please try again"
-done
 
 VPNIPPOOL="10.101.0.0/16"
 
@@ -167,10 +141,6 @@ iptables -A INPUT -m state --state INVALID -j DROP
 # rate-limit repeated new requests from same IP to any ports
 iptables -I INPUT -i "${ETH0ORSIMILAR}" -m state --state NEW -m recent --set
 iptables -I INPUT -i "${ETH0ORSIMILAR}" -m state --state NEW -m recent --update --seconds 300 --hitcount 60 -j DROP
-
-# accept (non-standard) SSH
-iptables -A INPUT -p tcp --dport "${SSHPORT}" -j ACCEPT
-
 
 # VPN
 
@@ -253,7 +223,6 @@ sysctl -p
 echo "config setup
   strictcrlpolicy=yes
   uniqueids=never
-
 conn roadwarrior
   auto=add
   compress=no
@@ -261,11 +230,9 @@ conn roadwarrior
   keyexchange=ikev2
   fragmentation=yes
   forceencaps=yes
-
   # CNSA/RFC 6379 Suite B (https://wiki.strongswan.org/projects/strongswan/wiki/IKEv2CipherSuites)
   ike=aes256gcm16-prfsha384-ecp384!
   esp=aes256gcm16-ecp384!
-
   dpdaction=clear
   dpddelay=900s
   rekey=no
@@ -289,48 +256,6 @@ ${VPNUSERNAME} : EAP \"${VPNPASSWORD}\"
 
 ipsec restart
 
-
-echo
-echo "--- User ---"
-echo
-
-# user + SSH
-
-id -u "${LOGINUSERNAME}" &>/dev/null || adduser --disabled-password --gecos "" "${LOGINUSERNAME}"
-echo "${LOGINUSERNAME}:${LOGINPASSWORD}" | chpasswd
-adduser "${LOGINUSERNAME}" sudo
-
-sed -r \
--e "s/^#?Port 22$/Port ${SSHPORT}/" \
--e 's/^#?LoginGraceTime (120|2m)$/LoginGraceTime 30/' \
--e 's/^#?PermitRootLogin yes$/PermitRootLogin no/' \
--e 's/^#?X11Forwarding yes$/X11Forwarding no/' \
--e 's/^#?UsePAM yes$/UsePAM no/' \
--i.original /etc/ssh/sshd_config
-
-grep -Fq 'jawj/IKEv2-setup' /etc/ssh/sshd_config || echo "
-# https://github.com/jawj/IKEv2-setup
-MaxStartups 1
-MaxAuthTries 2
-UseDNS no" >> /etc/ssh/sshd_config
-
-if [[ $CERTLOGIN = "y" ]]; then
-  mkdir -p "/home/${LOGINUSERNAME}/.ssh"
-  chown "${LOGINUSERNAME}" "/home/${LOGINUSERNAME}/.ssh"
-  chmod 700 "/home/${LOGINUSERNAME}/.ssh"
-
-  cp "/root/.ssh/authorized_keys" "/home/${LOGINUSERNAME}/.ssh/authorized_keys"
-  chown "${LOGINUSERNAME}" "/home/${LOGINUSERNAME}/.ssh/authorized_keys"
-  chmod 600 "/home/${LOGINUSERNAME}/.ssh/authorized_keys"
-
-  sed -r \
-  -e "s/^#?PasswordAuthentication yes$/PasswordAuthentication no/" \
-  -i.allows_pwd /etc/ssh/sshd_config
-fi
-
-service ssh restart
-
-
 echo
 echo "--- Timezone, mail, unattended upgrades ---"
 echo
@@ -343,12 +268,6 @@ sed -r \
 -e "s/^myhostname =.*$/myhostname = ${VPNHOST}/" \
 -e 's/^inet_interfaces =.*$/inet_interfaces = loopback-only/' \
 -i.original /etc/postfix/main.cf
-
-grep -Fq 'jawj/IKEv2-setup' /etc/aliases || echo "
-# https://github.com/jawj/IKEv2-setup
-root: ${EMAILADDR}
-${LOGINUSERNAME}: ${EMAILADDR}
-" >> /etc/aliases
 
 newaliases
 service postfix restart
@@ -373,8 +292,6 @@ service unattended-upgrades restart
 echo
 echo "--- Creating configuration files ---"
 echo
-
-cd "/home/${LOGINUSERNAME}"
 
 cat << EOF > vpn-ios-or-mac.mobileconfig
 <?xml version='1.0' encoding='UTF-8'?>
@@ -503,7 +420,6 @@ EOF
 cat << EOF > vpn-ubuntu-client.sh
 #!/bin/bash -e
 if [[ \$(id -u) -ne 0 ]]; then echo "Please run as root (e.g. sudo ./path/to/this/script)"; exit 1; fi
-
 read -p "VPN username (same as entered on server): " VPNUSERNAME
 while true; do
 read -s -p "VPN password (same as entered on server): " VPNPASSWORD
@@ -513,12 +429,9 @@ echo
 [ "\$VPNPASSWORD" = "\$VPNPASSWORD2" ] && break
 echo "Passwords didn't match -- please try again"
 done
-
 apt-get install -y strongswan libstrongswan-standard-plugins libcharon-extra-plugins
 apt-get install -y libcharon-standard-plugins || true  # 17.04+ only
-
 ln -f -s /etc/ssl/certs/ISRG_Root_X1.pem /etc/ipsec.d/cacerts/
-
 grep -Fq 'jawj/IKEv2-setup' /etc/ipsec.conf || echo "
 # https://github.com/jawj/IKEv2-setup
 conn ikev2vpn
@@ -538,25 +451,20 @@ conn ikev2vpn
         rightsubnet=0.0.0.0/0
         auto=add  # or auto=start to bring up automatically
 " >> /etc/ipsec.conf
-
 grep -Fq 'jawj/IKEv2-setup' /etc/ipsec.secrets || echo "
 # https://github.com/jawj/IKEv2-setup
 \${VPNUSERNAME} : EAP \"\${VPNPASSWORD}\"
 " >> /etc/ipsec.secrets
-
 ipsec restart
 sleep 5  # is there a better way?
-
 echo "Bringing up VPN ..."
 ipsec up ikev2vpn
 ipsec statusall
-
 echo
 echo -n "Testing IP address ... "
 VPNIP=\$(dig -4 +short ${VPNHOST})
 ACTUALIP=\$(dig -4 +short myip.opendns.com @resolver1.opendns.com)
 if [[ "\$VPNIP" == "\$ACTUALIP" ]]; then echo "PASSED (IP: \${VPNIP})"; else echo "FAILED (IP: \${ACTUALIP}, VPN IP: \${VPNIP})"; fi
-
 echo
 echo "To disconnect: ipsec down ikev2vpn"
 echo "To reconnect:  ipsec up ikev2vpn"
@@ -565,24 +473,17 @@ EOF
 
 cat << EOF > vpn-instructions.txt
 == iOS and macOS ==
-
 A configuration profile is attached as vpn-ios-or-mac.mobileconfig — simply open this to install. You will be asked for your device PIN or password, and your VPN username and password, not necessarily in that order.
-
-
 == Windows ==
-
 You will need Windows 10 Pro or above. Please run the following commands in PowerShell:
-
 $Response = Invoke-WebRequest -UseBasicParsing -Uri https://valid-isrgrootx1.letsencrypt.org
 # ^ this line fixes a certificate lazy-loading bug: see https://github.com/jawj/IKEv2-setup/issues/126
-
 Add-VpnConnection -Name "${VPNHOST}" \`
   -ServerAddress "${VPNHOST}" \`
   -TunnelType IKEv2 \`
   -EncryptionLevel Maximum \`
   -AuthenticationMethod EAP \`
   -RememberCredential
-
 Set-VpnConnectionIPsecConfiguration -ConnectionName "${VPNHOST}" \`
   -AuthenticationTransformConstants GCMAES256 \`
   -CipherTransformConstants GCMAES256 \`
@@ -591,28 +492,16 @@ Set-VpnConnectionIPsecConfiguration -ConnectionName "${VPNHOST}" \`
   -DHGroup ECP384 \`
   -PfsGroup ECP384 \`
   -Force
-
 # Run the following command to retain access to the local network (e.g. printers, file servers) while the VPN is connected.
 # On a home network, you probably want this. On a public network, you probably don't.
-
 Set-VpnConnection -Name "${VPNHOST}" -SplitTunneling \$True
-
 You will need to enter your chosen VPN username and password in order to connect.
-
-
 == Android ==
-
 Download the strongSwan app from the Play Store: https://play.google.com/store/apps/details?id=org.strongswan.android
-
 Then open the attached .sswan file, or select it after choosing 'Import VPN profile' from the strongSwan app menu. You will need to enter your chosen VPN username and password in order to connect.
-
 For a persistent connection, go to your device's Settings app and choose Network & Internet > Advanced > VPN > strongSwan VPN Client, tap the gear icon and toggle on 'Always-on VPN' (these options may differ by Android version and provider).
-
-
 == Ubuntu ==
-
 A bash script to set up strongSwan as a VPN client is attached as vpn-ubuntu-client.sh. You will need to chmod +x and then run the script as root.
-
 EOF
 
 EMAIL=$USER@$VPNHOST mutt -s "VPN configuration" -a vpn-ios-or-mac.mobileconfig vpn-android.sswan vpn-ubuntu-client.sh -- "${EMAILADDR}" < vpn-instructions.txt
@@ -620,9 +509,8 @@ EMAIL=$USER@$VPNHOST mutt -s "VPN configuration" -a vpn-ios-or-mac.mobileconfig 
 echo
 echo "--- How to connect ---"
 echo
-echo "Connection instructions have been emailed to you, and can also be found in your home directory, /home/${LOGINUSERNAME}"
+echo "Connection instructions have been emailed to you, and can also be found in your home directory"
 
 # necessary for IKEv2?
 # Windows: https://support.microsoft.com/en-us/kb/926179
 # HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\PolicyAgent += AssumeUDPEncapsulationContextOnSendRule, DWORD = 2
-
