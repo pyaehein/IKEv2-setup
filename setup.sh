@@ -88,7 +88,6 @@ echo
 echo "--- Configuration: general server settings ---"
 echo
 
-read -r -p "Timezone (default: Europe/London): " TZONE
 TZONE="Europe/London"
 
 EMAILADDR="hello@gmail.com"
