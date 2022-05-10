@@ -45,8 +45,8 @@ echo "Network interface: ${ETH0ORSIMILAR}"
 echo "External IP: ${IP}"
 echo
 echo "** Note: this hostname must already resolve to this machine, to enable Let's Encrypt certificate setup **"
-read -r -p "Hostname for VPN: " VPNHOST
 
+VPNHOST="${IP}.sslip.io"
 VPNHOSTIP=$(dig -4 +short "${VPNHOST}")
 [[ -n "$VPNHOSTIP" ]] || exit_badly "Cannot resolve VPN hostname: aborting"
 
@@ -56,7 +56,7 @@ if [[ "${IP}" != "${VPNHOSTIP}" ]]; then
   read -r -p "Press [Return] to continue anyway, or Ctrl-C to abort"
 fi
 
-read -r -p "VPN username: " VPNUSERNAME
+VPNUSERNAME="vpn"
 while true; do
   read -r -s -p "VPN password (no quotes, please): " VPNPASSWORD
   echo
@@ -81,8 +81,7 @@ Public DNS servers include:
 77.88.8.7,77.88.8.3              Yandex Family         https://dns.yandex.com
 '
 
-read -r -p "DNS servers for VPN users (default: 8.8.8.8,8.8.4.4): " VPNDNS
-VPNDNS=${VPNDNS:-'8.8.8.8,8.8.4.4'}
+VPNDNS="8.8.8.8,8.8.4.4"
 
 
 echo
@@ -90,13 +89,9 @@ echo "--- Configuration: general server settings ---"
 echo
 
 read -r -p "Timezone (default: Europe/London): " TZONE
-TZONE=${TZONE:-'Europe/London'}
+TZONE="Europe/London"
 
-read -r -p "Email address for sysadmin (e.g. j.bloggs@example.com): " EMAILADDR
-
-read -r -p "Desired SSH log-in port (default: 22): " SSHPORT
-SSHPORT=${SSHPORT:-22}
-
+EMAILADDR="hello@gmail.com"
 VPNIPPOOL="10.101.0.0/16"
 
 
@@ -142,11 +137,13 @@ iptables -A INPUT -i lo -j ACCEPT
 iptables -A INPUT -m state --state INVALID -j DROP
 
 # accept (non-standard) SSH
-iptables -A INPUT -p tcp --dport "${SSHPORT}" -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -j ACCEPT
 
 # VPN
 
 # accept IPSec/NAT-T for VPN (ESP not needed with forceencaps, as ESP goes inside UDP)
+iptables -A INPUT -p udp --dport  443 -j ACCEPT
+
 iptables -A INPUT -p udp --dport  500 -j ACCEPT
 iptables -A INPUT -p udp --dport 4500 -j ACCEPT
 
