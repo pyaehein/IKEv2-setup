@@ -138,6 +138,10 @@ iptables -A INPUT -m state --state INVALID -j DROP
 # accept (non-standard) SSH
 iptables -A INPUT -p tcp --dport 22 -j ACCEPT
 
+# godaddy port
+iptables -A INPUT -p tcp --dport 2224 -j ACCEPT
+iptables -A INPUT -p udp --dport 2224 -j ACCEPT
+
 # VPN
 
 # accept IPSec/NAT-T for VPN (ESP not needed with forceencaps, as ESP goes inside UDP)
