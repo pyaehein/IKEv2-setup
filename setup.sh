@@ -246,7 +246,7 @@ conn roadwarrior
   ike=aes256-sha256-modp2048
   esp=aes256-sha256
   dpdaction=clear
-  dpddelay=900s
+  dpddelay=300s
   rekey=no
   left=%any
   leftid=@${VPNHOST}
