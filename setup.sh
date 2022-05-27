@@ -243,8 +243,8 @@ conn roadwarrior
   fragmentation=yes
   forceencaps=yes
   # CNSA/RFC 6379 Suite B (https://wiki.strongswan.org/projects/strongswan/wiki/IKEv2CipherSuites)
-  ike=aes256-sha2_256-modp2048
-  esp=aes256-sha2_256
+  ike=aes256-sha2_256-modp2048,aes256gcm16-prfsha512-ecp384!
+  esp=aes256-sha2_256,aes256gcm16-ecp384!
   dpdaction=clear
   dpddelay=300s
   rekey=no
