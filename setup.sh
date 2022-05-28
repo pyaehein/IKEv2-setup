@@ -41,6 +41,7 @@ echo
 ETH0ORSIMILAR=$(ip route get 1.1.1.1 | grep -oP ' dev \K\S+')
 IP=$(dig -4 +short myip.opendns.com @resolver1.opendns.com)
 
+
 echo "Network interface: ${ETH0ORSIMILAR}"
 echo "External IP: ${IP}"
 echo
@@ -81,8 +82,7 @@ Public DNS servers include:
 77.88.8.7,77.88.8.3              Yandex Family         https://dns.yandex.com
 '
 
-VPNDNS="8.8.8.8,8.8.4.4"
-
+VPNDNS=$(systemd-resolve --status | grep "DNS Servers" | awk '{print $3}' | head -1)
 
 echo
 echo "--- Configuration: general server settings ---"
@@ -93,6 +93,11 @@ TZONE="Europe/London"
 EMAILADDR="hello@gmail.com"
 VPNIPPOOL="10.101.0.0/16"
 
+wget https://raw.githubusercontent.com/sunknudsen/privacy-guides/master/how-to-self-host-hardened-strongswan-ikev2-ipsec-vpn-server-for-ios-and-macos/ulagen.py
+VPNIP6POOL=$(python3 ulagen.py | grep "First subnet" | cut -d ' ' -f 3)
+
+echo "ipv6"
+echo ${VPNIP6POOL}
 
 echo
 echo "--- Upgrading and installing packages ---"
@@ -124,34 +129,50 @@ iptables -F
 iptables -t nat -F
 iptables -t mangle -F
 
+ip6tables -P INPUT   ACCEPT
+ip6tables -P FORWARD ACCEPT
+ip6tables -P OUTPUT  ACCEPT
+
+ip6tables -F
+ip6tables -t nat -F
+ip6tables -t mangle -F
+
 # INPUT
 
 # accept anything already accepted
 iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+ip6tables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 
 # accept anything on the loopback interface
 iptables -A INPUT -i lo -j ACCEPT
+ip6tables -A INPUT -i lo -j ACCEPT
 
 # drop invalid packets
 iptables -A INPUT -m state --state INVALID -j DROP
+ip6tables -A INPUT -m state --state INVALID -j DROP
 
 # accept (non-standard) SSH
 iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+ip6tables -A INPUT -p tcp --dport 22 -j ACCEPT
 
 # godaddy port
 iptables -A INPUT -p tcp --dport 2224 -j ACCEPT
 iptables -A INPUT -p udp --dport 2224 -j ACCEPT
+ip6tables -A INPUT -p tcp --dport 2224 -j ACCEPT
+ip6tables -A INPUT -p udp --dport 2224 -j ACCEPT
 
 # VPN
 
 # accept IPSec/NAT-T for VPN (ESP not needed with forceencaps, as ESP goes inside UDP)
 iptables -A INPUT -p udp --dport  443 -j ACCEPT
-
 iptables -A INPUT -p udp --dport  500 -j ACCEPT
 iptables -A INPUT -p udp --dport 4500 -j ACCEPT
 
-# Block BitTorrent
+ip6tables -A INPUT -p udp --dport  443 -j ACCEPT
+ip6tables -A INPUT -p udp --dport  500 -j ACCEPT
+ip6tables -A INPUT -p udp --dport 4500 -j ACCEPT
 
+# Block BitTorrent
 iptables -A OUTPUT -p tcp --dport 6881:6889 -j DROP
 iptables -A FORWARD -m string --algo bm --string "BitTorrent" -j DROP
 iptables -A FORWARD -m string --algo bm --string "BitTorrent protocol" -j DROP
@@ -159,25 +180,64 @@ iptables -A FORWARD -m string --algo bm --string "peer_id=" -j DROP
 iptables -A FORWARD -m string --algo bm --string ".torrent" -j DROP
 iptables -A FORWARD -m string --algo bm --string "torrent" -j DROP
 
+ip6tables -A OUTPUT -p tcp --dport 6881:6889 -j DROP
+ip6tables -A FORWARD -m string --algo bm --string "BitTorrent" -j DROP
+ip6tables -A FORWARD -m string --algo bm --string "BitTorrent protocol" -j DROP
+ip6tables -A FORWARD -m string --algo bm --string "peer_id=" -j DROP
+ip6tables -A FORWARD -m string --algo bm --string ".torrent" -j DROP
+ip6tables -A FORWARD -m string --algo bm --string "torrent" -j DROP
+
 
 # forward VPN traffic anywhere
 iptables -A FORWARD --match policy --pol ipsec --dir in  --proto esp -s "${VPNIPPOOL}" -j ACCEPT
 iptables -A FORWARD --match policy --pol ipsec --dir out --proto esp -d "${VPNIPPOOL}" -j ACCEPT
 
+ip6tables -A FORWARD --match policy --pol ipsec --dir in  --proto esp -s "${VPNIP6POOL}" -j ACCEPT
+ip6tables -A FORWARD --match policy --pol ipsec --dir out --proto esp -d "${VPNIP6POOL}" -j ACCEPT
+
+# ipv6 input accepts
+ip6tables -A INPUT -p ipv6-icmp --icmpv6-type destination-unreachable -j ACCEPT
+ip6tables -A INPUT -p ipv6-icmp --icmpv6-type packet-too-big -j ACCEPT
+ip6tables -A INPUT -p ipv6-icmp --icmpv6-type time-exceeded -j ACCEPT
+ip6tables -A INPUT -p ipv6-icmp --icmpv6-type parameter-problem -j ACCEPT
+ip6tables -A INPUT -p ipv6-icmp --icmpv6-type router-advertisement -m hl --hl-eq 255 -j ACCEPT
+ip6tables -A INPUT -p ipv6-icmp --icmpv6-type neighbor-solicitation -m hl --hl-eq 255 -j ACCEPT
+ip6tables -A INPUT -p ipv6-icmp --icmpv6-type neighbor-advertisement -m hl --hl-eq 255 -j ACCEPT
+ip6tables -A INPUT -p ipv6-icmp --icmpv6-type redirect -m hl --hl-eq 255 -j ACCEPT
+
+# ipv6 output accepts
+ip6tables -A OUTPUT -p ipv6-icmp --icmpv6-type destination-unreachable -j ACCEPT
+ip6tables -A OUTPUT -p ipv6-icmp --icmpv6-type packet-too-big -j ACCEPT
+ip6tables -A OUTPUT -p ipv6-icmp --icmpv6-type time-exceeded -j ACCEPT
+ip6tables -A OUTPUT -p ipv6-icmp --icmpv6-type parameter-problem -j ACCEPT
+ip6tables -A OUTPUT -p ipv6-icmp --icmpv6-type router-solicitation -m hl --hl-eq 255 -j ACCEPT
+ip6tables -A OUTPUT -p ipv6-icmp --icmpv6-type neighbour-solicitation -m hl --hl-eq 255 -j ACCEPT
+ip6tables -A OUTPUT -p ipv6-icmp --icmpv6-type neighbour-advertisement -m hl --hl-eq 255 -j ACCEPT
+
 # reduce MTU/MSS values for dumb VPN clients
 iptables -t mangle -A FORWARD --match policy --pol ipsec --dir in -s "${VPNIPPOOL}" -o "${ETH0ORSIMILAR}" -p tcp -m tcp --tcp-flags SYN,RST SYN -m tcpmss --mss 1361:1536 -j TCPMSS --set-mss 1360
+ip6tables -t mangle -A FORWARD --match policy --pol ipsec --dir in -s "${VPNIP6POOL}" -o "${ETH0ORSIMILAR}" -p tcp -m tcp --tcp-flags SYN,RST SYN -m tcpmss --mss 1361:1536 -j TCPMSS --set-mss 1360
 
 # masquerade VPN traffic over eth0 etc.
 iptables -t nat -A POSTROUTING -s "${VPNIPPOOL}" -o "${ETH0ORSIMILAR}" -m policy --pol ipsec --dir out -j ACCEPT  # exempt IPsec traffic from masquerading
 iptables -t nat -A POSTROUTING -s "${VPNIPPOOL}" -o "${ETH0ORSIMILAR}" -j MASQUERADE
 
+ip6tables -t nat -A POSTROUTING -s "${VPNIP6POOL}" -o "${ETH0ORSIMILAR}" -m policy --pol ipsec --dir out -j ACCEPT  # exempt IPsec traffic from masquerading
+ip6tables -t nat -A POSTROUTING -s "${VPNIP6POOL}" -o "${ETH0ORSIMILAR}" -j MASQUERADE
+
+
+ip6tables -t mangle -A FORWARD -m policy --pol ipsec --dir in -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1280
+ip6tables -t mangle -A FORWARD -m policy --pol ipsec --dir out -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1280
 
 # fall through to drop any other input and forward traffic
 
 iptables -A INPUT   -j DROP
 iptables -A FORWARD -j DROP
-
 iptables -L
+
+ip6tables -A INPUT   -j DROP
+ip6tables -A FORWARD -j DROP
+ip6tables -L
 
 netfilter-persistent save
 
@@ -223,10 +283,7 @@ net.ipv4.ip_no_pmtu_disc = 1
 net.ipv4.conf.all.rp_filter = 1
 net.ipv4.conf.all.accept_redirects = 0
 net.ipv4.conf.all.send_redirects = 0
-net.ipv6.conf.all.disable_ipv6 = 1
-net.ipv6.conf.default.disable_ipv6 = 1
-net.ipv6.conf.lo.disable_ipv6 = 1
-net.ipv6.conf.${ETH0ORSIMILAR}.disable_ipv6 = 1
+net.ipv6.conf.all.forwarding = 1
 " >> /etc/sysctl.conf
 
 sysctl -p
@@ -258,7 +315,7 @@ conn roadwarrior
   rightauth=eap-mschapv2
   eap_identity=%any
   rightdns=${VPNDNS}
-  rightsourceip=${VPNIPPOOL},fdba:8ce0:c301::/64
+  rightsourceip=${VPNIPPOOL},${VPNIP6POOL}
   rightsendcert=never
 " > /etc/ipsec.conf
 
