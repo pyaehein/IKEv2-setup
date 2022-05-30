@@ -151,6 +151,13 @@ ip6tables -A INPUT -i lo -j ACCEPT
 iptables -A INPUT -m state --state INVALID -j DROP
 ip6tables -A INPUT -m state --state INVALID -j DROP
 
+# rate-limit repeated new requests from same IP to any ports
+iptables -I INPUT -i "${ETH0ORSIMILAR}" -m state --state NEW -m recent --set
+iptables -I INPUT -i "${ETH0ORSIMILAR}" -m state --state NEW -m recent --update --seconds 300 --hitcount 60 -j DROP
+
+ip6tables -I INPUT -i "${ETH0ORSIMILAR}" -m state --state NEW -m recent --set
+ip6tables -I INPUT -i "${ETH0ORSIMILAR}" -m state --state NEW -m recent --update --seconds 300 --hitcount 60 -j DROP
+
 # accept (non-standard) SSH
 iptables -A INPUT -p tcp --dport 22 -j ACCEPT
 ip6tables -A INPUT -p tcp --dport 22 -j ACCEPT
